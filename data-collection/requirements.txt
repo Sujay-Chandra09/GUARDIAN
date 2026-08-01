@@ -1,0 +1,5 @@
+pydriller>=2.6
+pandas>=2.0.0
+scikit-learn>=1.2.0
+requests>=2.30.0
+gitpython>=3.1.0
