@@ -43,13 +43,13 @@ guardian/
 
 ### Phase 2 — AI Model Training (Weeks 5-12)
 * **Baseline Model**: Train a fast Random Forest classifier (expected F1: 65-70%).
-* **Primary Model**: Fine-tune Microsoft’s **CodeBERT** pre-trained model to hit F1 $\ge 0.82$.
-* **Robustness**: Implement a fallback mechanism to default to the baseline/pre-trained models if fine-tuned weights are missing.
+* **Primary Model (Low-Risk Hybrid Ensemble)**: Feature extraction (AST/complexity metrics + frozen CodeBERT/Transformer dense embeddings) combined with an **XGBoost / LightGBM** classifier to achieve target F1 $\ge 0.82$ and AUC-ROC $\ge 0.85$ without full model fine-tuning overhead.
+* **Optional PEFT/LoRA Fallback**: Low-Rank Adaptation (LoRA) adapter tuning if specialized parameter tweaking is required.
 * **Evaluation**: Plot confusion matrices and compute Precision, Recall, F1, and AUC-ROC.
 
 ### Phase 3 — Python ML Service (Weeks 13-15)
 * **FastAPI App**: Expose a `POST /predict` endpoint that receives code snippets and returns a bug probability risk score (0.0 to 1.0).
-* **LLM Integration**: Send risky code snippets to GPT-4 or Gemini API to fetch natural language explanation and fix suggestions.
+* **LLM Integration (RAG & Few-Shot)**: Retrieve similar historical bug/fix pairs from Defects4J via vector search and prompt Gemini/GPT API for natural language explanations and code fix recommendations.
 * **Optimization**: Set up Redis caching to immediately return results for identical code snippets. Add a healthcheck endpoint (`GET /health`).
 
 ### Phase 4 — Java Spring Boot Backend (Weeks 16-20)
