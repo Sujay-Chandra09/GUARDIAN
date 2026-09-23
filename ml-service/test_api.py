@@ -35,13 +35,17 @@ def test_predict_buggy():
     print("Retrieved Context Count:", data["retrieved_context_count"])
     print("Explanation:\n", data["explanation"])
     assert response.status_code == 200
+    assert data["is_buggy"] is True
+    assert data["risk_score"] >= 0.5
 
 def test_predict_clean():
     payload = {
         "code_snippet": """
-        public static boolean isNotBlank(CharSequence cs) {
-            if (cs == null || cs.length() == 0) {
-                return false;
+        public static boolean isBlank(CharSequence cs) {
+            if (cs == null || cs.length() == 0) return true;
+            int strLen = cs.length();
+            for (int i = 0; i < strLen; i++) {
+                if (!Character.isWhitespace(cs.charAt(i))) return false;
             }
             return true;
         }
@@ -58,6 +62,8 @@ def test_predict_clean():
     print("Risk Level:", data["risk_level"])
     print("Latency (ms):", data["latency_ms"])
     assert response.status_code == 200
+    assert data["is_buggy"] is False
+    assert data["risk_score"] < 0.5
 
 if __name__ == "__main__":
     test_health()

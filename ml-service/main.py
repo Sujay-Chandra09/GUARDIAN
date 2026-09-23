@@ -1,26 +1,56 @@
 import time
 import os
 import joblib
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 
 from feature_extractor import CodeFeatureExtractor
 from rag_explainer import RAGExplainer
 
-app = FastAPI(
-    title="GUARDIAN ML Service",
-    description="Intelligent Bug Prediction & Code Review API using Feature Extraction Ensembles and RAG",
-    version="1.0.0"
-)
-
 # Global model and explainer handles
 model = None
 extractor = None
 rag_explainer = None
 
-MODEL_PATH = "ml-service/models/bug_classifier.pkl"
-EXTRACTOR_PATH = "ml-service/models/feature_extractor.pkl"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, "models", "bug_classifier.pkl")
+EXTRACTOR_PATH = os.path.join(BASE_DIR, "models", "feature_extractor.pkl")
+
+def load_artifacts():
+    global model, extractor, rag_explainer
+    print("Loading GUARDIAN ML artifacts...")
+    if os.path.exists(MODEL_PATH) and os.path.exists(EXTRACTOR_PATH):
+        model = joblib.load(MODEL_PATH)
+        extractor = CodeFeatureExtractor.load(EXTRACTOR_PATH)
+        print("Successfully loaded trained classifier and feature extractor.")
+    else:
+        print("Warning: Model artifacts not found! Run train_classifier.py first.")
+
+    rag_explainer = RAGExplainer()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    load_artifacts()
+    yield
+
+app = FastAPI(
+    title="GUARDIAN ML Service",
+    description="Intelligent Bug Prediction & Code Review API using Feature Extraction Ensembles and RAG",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# CORS middleware for Spring Boot backend and React frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class PredictRequest(BaseModel):
     code_snippet: str
@@ -34,19 +64,6 @@ class PredictResponse(BaseModel):
     latency_ms: float
     explanation: str
     retrieved_context_count: int
-
-@app.on_event("startup")
-def load_artifacts():
-    global model, extractor, rag_explainer
-    print("Loading GUARDIAN ML artifacts...")
-    if os.path.exists(MODEL_PATH) and os.path.exists(EXTRACTOR_PATH):
-        model = joblib.load(MODEL_PATH)
-        extractor = CodeFeatureExtractor.load(EXTRACTOR_PATH)
-        print("Successfully loaded trained classifier and feature extractor.")
-    else:
-        print("Warning: Model artifacts not found! Run train_classifier.py first.")
-
-    rag_explainer = RAGExplainer()
 
 @app.get("/health")
 def healthcheck():

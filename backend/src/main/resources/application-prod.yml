@@ -1,0 +1,16 @@
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/guardiandb}
+    username: ${SPRING_DATASOURCE_USERNAME:guardian}
+    password: ${SPRING_DATASOURCE_PASSWORD:guardian_secret}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+
+logging:
+  level:
+    com.guardian.backend: INFO
+    org.springframework.security: WARN

@@ -52,11 +52,12 @@ guardian/
 * **LLM Integration (RAG & Few-Shot)**: Retrieve similar historical bug/fix pairs from Defects4J via vector search and prompt Gemini/GPT API for natural language explanations and code fix recommendations.
 * **Optimization**: Set up Redis caching to immediately return results for identical code snippets. Add a healthcheck endpoint (`GET /health`).
 
-### Phase 4 — Java Spring Boot Backend (Weeks 16-20)
-* **API Service**: Spring Boot with Java 17 and Maven.
-* **Database**: PostgreSQL storing user data, repos, and historical scan results.
-* **Security**: JWT-based authentication and secure session management.
-* **Integration**: Call the Python FastAPI service on port 8000 via Spring WebClient, persist results, and serve clean JSON outputs.
+### Phase 4 — Java Spring Boot Backend (Weeks 16-20) — [COMPLETED]
+* **API Service**: Spring Boot 3.3.4 with Java 17 and Maven (`./mvnw`).
+* **Database**: Dual profile persistence with H2 in-memory DB for local development/testing and PostgreSQL for production container deployment.
+* **Security**: Stateless JWT-based authentication (Register, Login, Token filter) with BCrypt password hashing.
+* **Integration**: Asynchronous Spring WebClient calling Python FastAPI service on port 8000 (`/predict`, `/health`) with timeout and resilience handling.
+* **REST APIs**: Full suite for snippet analysis, repository scans, scan summary metrics, user history, and system statistics.
 
 ### Phase 5 — User-Facing Interfaces (Weeks 21-27)
 * **React Dashboard**: Interactive heatmaps, visual commit tracking, and metrics visualization.

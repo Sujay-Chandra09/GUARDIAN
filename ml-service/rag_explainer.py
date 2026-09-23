@@ -7,6 +7,12 @@ import requests
 
 class RAGExplainer:
     def __init__(self, d4j_path: str = "data-collection/defects4j_raw.csv"):
+        # Resolve path dynamically if relative path does not exist in current working directory
+        if not os.path.exists(d4j_path):
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            candidate = os.path.join(base_dir, "..", "data-collection", "defects4j_raw.csv")
+            if os.path.exists(candidate):
+                d4j_path = os.path.abspath(candidate)
         self.d4j_path = d4j_path
         self.vectorizer = TfidfVectorizer(max_features=500, token_pattern=r"(?u)\b\w+\b|[^\w\s]")
         self.snippets = []

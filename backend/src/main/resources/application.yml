@@ -1,0 +1,17 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: guardian-backend
+  profiles:
+    active: dev
+
+guardian:
+  ml-service:
+    base-url: ${ML_SERVICE_URL:http://localhost:8000}
+    timeout-seconds: 10
+  jwt:
+    # 256-bit base64-encoded secret key for HMAC-SHA256
+    secret: 404E635266556A586E3272357538782F413F4428472B4B6250645367566B5970
+    expiration-ms: 86400000 # 24 hours

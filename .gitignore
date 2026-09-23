@@ -137,3 +137,6 @@ mvwn.cmd
 # VS Code Extension
 out/
 *.vsix
+
+# Local tools
+.tools/
