@@ -31,7 +31,7 @@ public class User {
 
     public User(String username, String email, String password, Role role) {
         this.username = username;
-        this.email = email;
+        this.email = email != null ? email.toLowerCase().trim() : null;
         this.password = password;
         this.role = role != null ? role : Role.ROLE_USER;
         this.createdAt = LocalDateTime.now();
@@ -58,7 +58,7 @@ public class User {
     }
 
     public void setEmail(String email) {
-        this.email = email;
+        this.email = email != null ? email.toLowerCase().trim() : null;
     }
 
     public String getPassword() {

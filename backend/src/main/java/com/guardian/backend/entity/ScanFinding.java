@@ -21,7 +21,6 @@ public class ScanFinding {
     @Column(name = "function_name")
     private String functionName;
 
-    @Lob
     @Column(name = "code_snippet", nullable = false, columnDefinition = "TEXT")
     private String codeSnippet;
 
@@ -35,11 +34,9 @@ public class ScanFinding {
     @Column(name = "is_buggy", nullable = false)
     private boolean isBuggy;
 
-    @Lob
     @Column(columnDefinition = "TEXT")
     private String explanation;
 
-    @Lob
     @Column(name = "suggested_fix", columnDefinition = "TEXT")
     private String suggestedFix;
 

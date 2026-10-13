@@ -41,8 +41,12 @@ public class ScanResponseDto {
         dto.setCreatedAt(scan.getCreatedAt());
 
         if (scan.getUser() != null) {
-            dto.setUserId(scan.getUser().getId());
-            dto.setUsername(scan.getUser().getUsername());
+            try {
+                dto.setUserId(scan.getUser().getId());
+                dto.setUsername(scan.getUser().getUsername());
+            } catch (Exception ignored) {
+                // If user proxy is not initialized outside session
+            }
         }
 
         if (includeFindings && scan.getFindings() != null) {

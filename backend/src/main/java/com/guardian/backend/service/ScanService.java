@@ -5,6 +5,13 @@ import com.guardian.backend.entity.*;
 import com.guardian.backend.exception.ResourceNotFoundException;
 import com.guardian.backend.repository.RepositoryScanRepository;
 import com.guardian.backend.repository.ScanFindingRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,9 +36,36 @@ public class ScanService {
         this.authService = authService;
     }
 
+    private User getRequiredCurrentUser() {
+        User currentUser = authService.getCurrentAuthenticatedUser();
+        if (currentUser == null) {
+            throw new AuthenticationCredentialsNotFoundException("User is not authenticated");
+        }
+        return currentUser;
+    }
+
+    private void checkScanOwnership(RepositoryScan scan, User currentUser) {
+        if (currentUser.getRole() != Role.ROLE_ADMIN) {
+            if (scan.getUser() == null || !scan.getUser().getId().equals(currentUser.getId())) {
+                throw new ResourceNotFoundException("RepositoryScan not found: " + scan.getId());
+            }
+        }
+    }
+
+    private RiskLevel mapRiskLevel(MlPredictResponse mlResponse) {
+        try {
+            if (mlResponse.getRiskLevel() != null) {
+                return RiskLevel.valueOf(mlResponse.getRiskLevel().toUpperCase());
+            }
+        } catch (Exception ignored) {
+        }
+        return mlResponse.getRiskScore() >= 0.75 ? RiskLevel.HIGH :
+                (mlResponse.getRiskScore() >= 0.4 ? RiskLevel.MEDIUM : RiskLevel.LOW);
+    }
+
     @Transactional
     public ScanFindingDto analyzeSnippet(AnalyzeSnippetRequest request) {
-        User currentUser = authService.getCurrentAuthenticatedUser();
+        User currentUser = getRequiredCurrentUser();
 
         // 1. Call ML Service
         MlPredictResponse mlResponse = mlServiceClient.predictBugRisk(
@@ -41,19 +75,14 @@ public class ScanService {
         );
 
         // 2. Map risk level
-        RiskLevel riskLevel;
-        try {
-            riskLevel = RiskLevel.valueOf(mlResponse.getRiskLevel().toUpperCase());
-        } catch (Exception e) {
-            riskLevel = mlResponse.getRiskScore() >= 0.75 ? RiskLevel.HIGH :
-                        (mlResponse.getRiskScore() >= 0.4 ? RiskLevel.MEDIUM : RiskLevel.LOW);
-        }
+        RiskLevel riskLevel = mapRiskLevel(mlResponse);
 
         // 3. Find or create RepositoryScan
         RepositoryScan scan;
         if (request.getRepositoryScanId() != null) {
             scan = scanRepository.findById(request.getRepositoryScanId())
                     .orElseThrow(() -> new ResourceNotFoundException("RepositoryScan not found: " + request.getRepositoryScanId()));
+            checkScanOwnership(scan, currentUser);
         } else {
             scan = new RepositoryScan(
                     request.getRepo() != null ? request.getRepo() : "ad-hoc-analysis",
@@ -96,9 +125,8 @@ public class ScanService {
         return ScanFindingDto.fromEntity(savedFinding);
     }
 
-    @Transactional
     public ScanResponseDto createRepositoryScan(CreateScanRequest request) {
-        User currentUser = authService.getCurrentAuthenticatedUser();
+        User currentUser = getRequiredCurrentUser();
         long startTime = System.currentTimeMillis();
 
         RepositoryScan scan = new RepositoryScan(
@@ -115,73 +143,101 @@ public class ScanService {
         double sumRisk = 0.0;
 
         if (request.getSnippets() != null && !request.getSnippets().isEmpty()) {
-            for (CreateScanRequest.SnippetItem item : request.getSnippets()) {
-                MlPredictResponse mlResponse = mlServiceClient.predictBugRisk(
-                        item.getCodeSnippet(),
-                        request.getRepoName(),
-                        item.getFilePath()
-                );
+            try {
+                for (CreateScanRequest.SnippetItem item : request.getSnippets()) {
+                    MlPredictResponse mlResponse = mlServiceClient.predictBugRisk(
+                            item.getCodeSnippet(),
+                            request.getRepoName(),
+                            item.getFilePath()
+                    );
 
-                RiskLevel riskLevel;
-                try {
-                    riskLevel = RiskLevel.valueOf(mlResponse.getRiskLevel().toUpperCase());
-                } catch (Exception e) {
-                    riskLevel = mlResponse.getRiskScore() >= 0.75 ? RiskLevel.HIGH :
-                                (mlResponse.getRiskScore() >= 0.4 ? RiskLevel.MEDIUM : RiskLevel.LOW);
+                    RiskLevel riskLevel = mapRiskLevel(mlResponse);
+
+                    ScanFinding finding = new ScanFinding(
+                            item.getFilePath(),
+                            item.getFunctionName(),
+                            item.getCodeSnippet(),
+                            mlResponse.getRiskScore(),
+                            riskLevel,
+                            mlResponse.isBuggy(),
+                            mlResponse.getExplanation(),
+                            mlResponse.getExplanation(),
+                            mlResponse.getRetrievedContextCount()
+                    );
+
+                    scan.addFinding(finding);
+                    sumRisk += mlResponse.getRiskScore();
+                    if (mlResponse.isBuggy()) {
+                        buggyCount++;
+                    }
                 }
-
-                ScanFinding finding = new ScanFinding(
-                        item.getFilePath(),
-                        item.getFunctionName(),
-                        item.getCodeSnippet(),
-                        mlResponse.getRiskScore(),
-                        riskLevel,
-                        mlResponse.isBuggy(),
-                        mlResponse.getExplanation(),
-                        mlResponse.getExplanation(),
-                        mlResponse.getRetrievedContextCount()
-                );
-
-                scan.addFinding(finding);
-                sumRisk += mlResponse.getRiskScore();
-                if (mlResponse.isBuggy()) {
-                    buggyCount++;
-                }
+                scan.setTotalFilesScanned(request.getSnippets().size());
+                scan.setBuggySnippetsFound(buggyCount);
+                scan.setAverageRiskScore(Math.round((sumRisk / request.getSnippets().size()) * 10000.0) / 10000.0);
+                scan.setStatus(ScanStatus.COMPLETED);
+            } catch (Exception ex) {
+                scan.setStatus(ScanStatus.FAILED);
+                scan.setScanDurationMs(System.currentTimeMillis() - startTime);
+                scanRepository.save(scan);
+                throw ex;
             }
-            scan.setTotalFilesScanned(request.getSnippets().size());
-            scan.setBuggySnippetsFound(buggyCount);
-            scan.setAverageRiskScore(Math.round((sumRisk / request.getSnippets().size()) * 10000.0) / 10000.0);
+        } else {
+            scan.setStatus(ScanStatus.COMPLETED);
         }
 
-        scan.setStatus(ScanStatus.COMPLETED);
         scan.setScanDurationMs(System.currentTimeMillis() - startTime);
         RepositoryScan savedScan = scanRepository.save(scan);
 
-        return ScanResponseDto.fromEntity(savedScan, true);
-    }
-
-    public List<ScanResponseDto> getUserScans() {
-        User currentUser = authService.getCurrentAuthenticatedUser();
-        List<RepositoryScan> scans;
+        ScanResponseDto dto = ScanResponseDto.fromEntity(savedScan, true);
         if (currentUser != null) {
-            scans = scanRepository.findByUserIdOrderByCreatedAtDesc(currentUser.getId());
-        } else {
-            scans = scanRepository.findAllByOrderByCreatedAtDesc();
+            dto.setUserId(currentUser.getId());
+            dto.setUsername(currentUser.getUsername());
         }
-        return scans.stream()
-                .map(s -> ScanResponseDto.fromEntity(s, false))
-                .collect(Collectors.toList());
+        return dto;
     }
 
+    @Transactional(readOnly = true)
+    public Page<ScanResponseDto> getUserScans(int page, int size, boolean all) {
+        User currentUser = getRequiredCurrentUser();
+        int sanitizedPage = Math.max(page, 0);
+        int sanitizedSize = Math.min(Math.max(size, 1), 100);
+        Pageable pageable = PageRequest.of(sanitizedPage, sanitizedSize, Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        Page<RepositoryScan> scanPage;
+        if (all) {
+            if (currentUser.getRole() != Role.ROLE_ADMIN) {
+                throw new AccessDeniedException("Access denied: only administrators can view all scans");
+            }
+            scanPage = scanRepository.findAll(pageable);
+        } else {
+            scanPage = scanRepository.findByUserId(currentUser.getId(), pageable);
+        }
+        return scanPage.map(s -> ScanResponseDto.fromEntity(s, false));
+    }
+
+    @Transactional(readOnly = true)
+    public List<ScanResponseDto> getUserScans() {
+        return getUserScans(0, 20, false).getContent();
+    }
+
+    @Transactional(readOnly = true)
     public ScanResponseDto getScanById(Long id) {
-        RepositoryScan scan = scanRepository.findById(id)
+        User currentUser = getRequiredCurrentUser();
+        RepositoryScan scan = scanRepository.findDetailedById(id)
+                .or(() -> scanRepository.findById(id))
                 .orElseThrow(() -> new ResourceNotFoundException("RepositoryScan not found: " + id));
+
+        checkScanOwnership(scan, currentUser);
         return ScanResponseDto.fromEntity(scan, true);
     }
 
+    @Transactional(readOnly = true)
     public ScanSummaryDto getScanSummary(Long id) {
+        User currentUser = getRequiredCurrentUser();
         RepositoryScan scan = scanRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("RepositoryScan not found: " + id));
+
+        checkScanOwnership(scan, currentUser);
 
         long high = findingRepository.countByRepositoryScanIdAndRiskLevel(id, RiskLevel.HIGH);
         long medium = findingRepository.countByRepositoryScanIdAndRiskLevel(id, RiskLevel.MEDIUM);
@@ -211,11 +267,37 @@ public class ScanService {
         return summary;
     }
 
+    @Transactional(readOnly = true)
+    public GlobalStatsDto getStats() {
+        User currentUser = getRequiredCurrentUser();
+        if (currentUser.getRole() == Role.ROLE_ADMIN) {
+            return getGlobalStats();
+        }
+        return getUserStats(currentUser.getId());
+    }
+
+    @PreAuthorize("hasRole('ADMIN')")
+    @Transactional(readOnly = true)
     public GlobalStatsDto getGlobalStats() {
         long totalScans = scanRepository.countTotalScans();
         long totalBugs = scanRepository.sumBuggySnippets();
         double avgRisk = scanRepository.averageRiskScoreAcrossScans();
         long activeScans = scanRepository.countByStatus(ScanStatus.IN_PROGRESS);
+
+        return new GlobalStatsDto(
+                totalScans,
+                totalBugs,
+                Math.round(avgRisk * 10000.0) / 10000.0,
+                activeScans
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public GlobalStatsDto getUserStats(Long userId) {
+        long totalScans = scanRepository.countByUserId(userId);
+        long totalBugs = scanRepository.sumBuggySnippetsByUserId(userId);
+        double avgRisk = scanRepository.averageRiskScoreByUserId(userId);
+        long activeScans = scanRepository.countByUserIdAndStatus(userId, ScanStatus.IN_PROGRESS);
 
         return new GlobalStatsDto(
                 totalScans,

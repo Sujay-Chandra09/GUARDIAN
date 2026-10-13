@@ -5,6 +5,7 @@ import com.guardian.backend.dto.AuthResponse;
 import com.guardian.backend.dto.RegisterRequest;
 import com.guardian.backend.entity.Role;
 import com.guardian.backend.entity.User;
+import com.guardian.backend.exception.ConflictException;
 import com.guardian.backend.exception.ResourceNotFoundException;
 import com.guardian.backend.repository.UserRepository;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -35,16 +36,19 @@ public class AuthService {
 
     @Transactional
     public AuthResponse register(RegisterRequest request) {
-        if (userRepository.existsByUsername(request.getUsername())) {
-            throw new IllegalArgumentException("Username is already taken");
+        String username = request.getUsername().trim();
+        String email = request.getEmail().trim().toLowerCase();
+
+        if (userRepository.existsByUsername(username)) {
+            throw new ConflictException("Username is already taken");
         }
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new IllegalArgumentException("Email is already registered");
+        if (userRepository.existsByEmail(email)) {
+            throw new ConflictException("Email is already registered");
         }
 
         User user = new User(
-                request.getUsername(),
-                request.getEmail(),
+                username,
+                email,
                 passwordEncoder.encode(request.getPassword()),
                 Role.ROLE_USER
         );
@@ -62,15 +66,17 @@ public class AuthService {
     }
 
     public AuthResponse login(AuthRequest request) {
+        String identifier = request.getUsername().trim();
         authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
-                        request.getUsername(),
+                        identifier,
                         request.getPassword()
                 )
         );
 
-        User user = userRepository.findByUsername(request.getUsername())
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + request.getUsername()));
+        User user = userRepository.findByUsername(identifier)
+                .or(() -> userRepository.findByEmail(identifier.toLowerCase()))
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + identifier));
 
         String token = jwtService.generateTokenForUsername(user.getUsername(), user.getRole().name());
 

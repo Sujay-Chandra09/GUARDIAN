@@ -1,10 +1,12 @@
 package com.guardian.backend.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 
 public class AnalyzeSnippetRequest {
 
     @NotBlank(message = "Code snippet is required")
+    @Size(max = 20000, message = "Code snippet must not exceed 20000 characters")
     private String codeSnippet;
 
     private String repo = "unknown";
@@ -30,7 +32,7 @@ public class AnalyzeSnippetRequest {
     }
 
     public String getRepo() {
-        return repo;
+        return repo != null ? repo : "unknown";
     }
 
     public void setRepo(String repo) {
@@ -38,7 +40,7 @@ public class AnalyzeSnippetRequest {
     }
 
     public String getFilepath() {
-        return filepath;
+        return filepath != null ? filepath : "Snippet.java";
     }
 
     public void setFilepath(String filepath) {
@@ -46,7 +48,7 @@ public class AnalyzeSnippetRequest {
     }
 
     public String getFunctionName() {
-        return functionName;
+        return functionName != null ? functionName : "anonymous";
     }
 
     public void setFunctionName(String functionName) {

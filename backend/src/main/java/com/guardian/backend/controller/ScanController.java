@@ -3,6 +3,7 @@ package com.guardian.backend.controller;
 import com.guardian.backend.dto.*;
 import com.guardian.backend.service.ScanService;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -38,11 +39,18 @@ public class ScanController {
     }
 
     /**
-     * Get scan history for the current authenticated user.
+     * Get scan history for the current authenticated user (or all scans for admin with all=true).
      */
     @GetMapping
-    public ResponseEntity<List<ScanResponseDto>> getUserScans() {
-        return ResponseEntity.ok(scanService.getUserScans());
+    public ResponseEntity<List<ScanResponseDto>> getUserScans(
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "false") boolean all
+    ) {
+        Page<ScanResponseDto> scanPage = scanService.getUserScans(page, size, all);
+        return ResponseEntity.ok()
+                .header("X-Total-Count", String.valueOf(scanPage.getTotalElements()))
+                .body(scanPage.getContent());
     }
 
     /**
@@ -62,10 +70,10 @@ public class ScanController {
     }
 
     /**
-     * Get global platform-wide statistics.
+     * Get platform statistics (platform-wide for admin, user-scoped for standard users).
      */
     @GetMapping("/stats")
     public ResponseEntity<GlobalStatsDto> getGlobalStats() {
-        return ResponseEntity.ok(scanService.getGlobalStats());
+        return ResponseEntity.ok(scanService.getStats());
     }
 }

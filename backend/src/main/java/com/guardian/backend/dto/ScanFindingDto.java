@@ -1,5 +1,6 @@
 package com.guardian.backend.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.guardian.backend.entity.RiskLevel;
 import com.guardian.backend.entity.ScanFinding;
 import java.time.LocalDateTime;
@@ -13,7 +14,10 @@ public class ScanFindingDto {
     private String codeSnippet;
     private double riskScore;
     private RiskLevel riskLevel;
+
+    @JsonProperty("isBuggy")
     private boolean isBuggy;
+
     private String explanation;
     private String suggestedFix;
     private int retrievedContextCount;
@@ -96,10 +100,12 @@ public class ScanFindingDto {
         this.riskLevel = riskLevel;
     }
 
+    @JsonProperty("isBuggy")
     public boolean isBuggy() {
         return isBuggy;
     }
 
+    @JsonProperty("isBuggy")
     public void setBuggy(boolean buggy) {
         isBuggy = buggy;
     }

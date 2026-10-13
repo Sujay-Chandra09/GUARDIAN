@@ -1,24 +1,38 @@
 package com.guardian.backend.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
 import java.util.ArrayList;
 import java.util.List;
 
 public class CreateScanRequest {
 
     @NotBlank(message = "Repository name is required")
+    @Size(max = 255, message = "Repository name must not exceed 255 characters")
     private String repoName;
 
+    @Size(max = 255, message = "Repository URL must not exceed 255 characters")
     private String repoUrl;
+
     private String branch = "main";
     private String commitHash;
 
     // Optional list of initial snippets to analyze in this scan
+    @Valid
+    @Size(max = 100, message = "Snippets list must not exceed 100 items")
     private List<SnippetItem> snippets = new ArrayList<>();
 
     public static class SnippetItem {
+        @NotBlank(message = "File path is required")
+        @Size(max = 255, message = "File path must not exceed 255 characters")
         private String filePath;
+
         private String functionName;
+
+        @NotBlank(message = "Code snippet is required")
+        @Size(max = 20000, message = "Code snippet must not exceed 20000 characters")
         private String codeSnippet;
 
         public SnippetItem() {}

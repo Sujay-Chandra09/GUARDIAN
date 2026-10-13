@@ -2,10 +2,12 @@ package com.guardian.backend.service;
 
 import com.guardian.backend.dto.MlPredictRequest;
 import com.guardian.backend.dto.MlPredictResponse;
+import com.guardian.backend.exception.MlServiceException;
 import com.guardian.backend.exception.MlServiceUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Mono;
@@ -31,24 +33,41 @@ public class MlServiceClient {
         MlPredictRequest request = new MlPredictRequest(codeSnippet, repo, filepath);
 
         try {
-            return webClient.post()
+            MlPredictResponse response = webClient.post()
                     .uri("/predict")
                     .bodyValue(request)
                     .retrieve()
+                    .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
+                            clientResponse.bodyToMono(String.class)
+                                    .defaultIfEmpty("Invalid ML request parameters")
+                                    .flatMap(errorBody -> {
+                                        log.error("ML service returned 4xx client error: {}", errorBody);
+                                        return Mono.error(new IllegalArgumentException("ML service rejected request: " + errorBody));
+                                    })
+                    )
+                    .onStatus(HttpStatusCode::is5xxServerError, clientResponse ->
+                            clientResponse.bodyToMono(String.class)
+                                    .defaultIfEmpty("ML internal server error")
+                                    .flatMap(errorBody -> {
+                                        log.error("ML service returned 5xx server error: {}", errorBody);
+                                        return Mono.error(new MlServiceException("ML service encountered an internal error"));
+                                    })
+                    )
                     .bodyToMono(MlPredictResponse.class)
                     .timeout(Duration.ofSeconds(timeoutSeconds))
-                    .onErrorResume(ex -> {
-                        log.error("Failed to communicate with GUARDIAN ML service: {}", ex.getMessage());
-                        return Mono.error(new MlServiceUnavailableException(
-                                "GUARDIAN Python ML service is unreachable at port 8000: " + ex.getMessage(), ex
-                        ));
-                    })
                     .block();
-        } catch (MlServiceUnavailableException e) {
+
+            if (response == null) {
+                log.error("ML service returned null body for prediction");
+                throw new MlServiceUnavailableException("ML service returned an empty response");
+            }
+
+            return response;
+        } catch (IllegalArgumentException | MlServiceException | MlServiceUnavailableException e) {
             throw e;
         } catch (Exception e) {
-            log.error("Unexpected error during ML prediction: {}", e.getMessage());
-            throw new MlServiceUnavailableException("ML service prediction failed: " + e.getMessage(), e);
+            log.error("Failed to communicate with GUARDIAN ML service: {}", e.getMessage(), e);
+            throw new MlServiceUnavailableException("ML service is currently unavailable", e);
         }
     }
 
@@ -63,7 +82,8 @@ public class MlServiceClient {
                     .onErrorReturn(Map.of("status", "unreachable", "error", "ML service offline"))
                     .block();
         } catch (Exception e) {
-            return Map.of("status", "unreachable", "error", e.getMessage());
+            log.error("ML service health check failed: {}", e.getMessage());
+            return Map.of("status", "unreachable", "error", "ML service offline");
         }
     }
 }
